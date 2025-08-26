@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http" // Import the net/http package
+	"net/http"
 	"os"
 	"time"
 
@@ -15,41 +15,34 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
-	// "myapp/utils" // I've commented this out as I don't have the code for it
 )
 
 var collection *mongo.Collection
 
-// --- NEW ---
-// Define a struct to map the incoming JSON to.
-// This ensures our data is structured correctly.
+// Struct for students
 type Student struct {
 	Name string `json:"name" bson:"name"`
 	Age  int    `json:"age"  bson:"age"`
 }
 
 func main() {
-	// Load .env file
-if err := godotenv.Load(); err != nil {
-    log.Println("No .env file found, using Render environment variables")
-}
+	// Load .env file for local dev (Render will skip this)
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using Render environment variables")
+	}
 
 	fmt.Println("Main package -> PORT:", os.Getenv("PORT"))
 
-	// Call utils package function
-	// utils.PrintEnv()
-
-	// Get MongoDB URI from .env
+	// MongoDB URI
 	uri := os.Getenv("MONGODB_URI")
 	if uri == "" {
 		log.Fatal("You must set MONGODB_URI environment variable")
 	}
 
-	// Set Stable API version for MongoDB
+	// MongoDB client
 	serverAPI := options.ServerAPI(options.ServerAPIVersion1)
 	clientOptions := options.Client().ApplyURI(uri).SetServerAPIOptions(serverAPI)
 
-	// Connect to MongoDB
 	client, err := mongo.Connect(context.TODO(), clientOptions)
 	if err != nil {
 		log.Fatal("MongoDB connection error:", err)
@@ -58,29 +51,28 @@ if err := godotenv.Load(); err != nil {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Ping the MongoDB server
 	if err := client.Ping(ctx, readpref.Primary()); err != nil {
 		log.Fatal("MongoDB ping failed:", err)
 	}
 
 	fmt.Println("Pinged your deployment. You successfully connected to MongoDB!")
 
-	// Pick your database and collection
+	// Database & collection
 	db := client.Database("students")
 	collection = db.Collection("theirdata")
 
-	// Set up Gin router
+	// Gin router
 	r := gin.Default()
 
-	// Enable CORS for React dev server
+	// CORS (allow localhost for dev + your Render domain in production)
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173"},
+		AllowOrigins:     []string{"http://localhost:5173", "https://your-render-service.onrender.com"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
 		AllowHeaders:     []string{"Origin", "Content-Type"},
 		AllowCredentials: true,
 	}))
 
-	// Route: GET /students → fetch all documents
+	// GET /students
 	r.GET("/students", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -101,36 +93,33 @@ if err := godotenv.Load(); err != nil {
 		c.JSON(http.StatusOK, results)
 	})
 
-	// --- NEW ROUTE ---
-	// Route: POST /students → add a new student
+	// POST /students
 	r.POST("/students", func(c *gin.Context) {
 		var newStudent Student
-
-		// Bind the incoming JSON from the request body to the newStudent struct.
-		// If there's an error (e.g., bad format), return a 400 Bad Request error.
 		if err := c.ShouldBindJSON(&newStudent); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		// Create a context for the database operation
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		// Insert the new student document into the collection
 		result, err := collection.InsertOne(ctx, newStudent)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to insert document"})
 			return
 		}
 
-		// If successful, return a 201 Created status and the ID of the new document.
 		c.JSON(http.StatusCreated, gin.H{
 			"message":    "Student added successfully!",
 			"insertedID": result.InsertedID,
 		})
 	})
 
-	// Run the server on port 8080
-	r.Run(":8080")
+	// ✅ Run on Render-provided PORT
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // local fallback
+	}
+	r.Run(":" + port)
 }
