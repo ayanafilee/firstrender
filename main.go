@@ -30,9 +30,9 @@ type Student struct {
 
 func main() {
 	// Load .env file
-	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
-	}
+if err := godotenv.Load(); err != nil {
+    log.Println("No .env file found, using Render environment variables")
+}
 
 	fmt.Println("Main package -> PORT:", os.Getenv("PORT"))
 
